@@ -1,0 +1,6 @@
+# The two standard copies are byte-identical files: standards/core.md is shared
+# between five owner repositories and scripts/core-drift.ts is copied from the
+# standards directory. `just core-drift` compares core.md by hash, and formatting
+# either file would break that comparison.
+standards/core.md
+scripts/core-drift.ts
