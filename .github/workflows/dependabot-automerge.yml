@@ -1,0 +1,84 @@
+name: Dependabot automerge
+
+# Public repositories on this account allow native auto-merge, so this workflow
+# only classifies a Dependabot pull request and arms it. GitHub merges it once
+# every required check on the head commit passes.
+#
+# Minor and patch updates get the `automerge` label and native auto-merge.
+# Major updates get `major-update` and one review comment, and are never merged
+# unattended. Nothing here checks out or runs pull request code, which is why
+# `pull_request_target` is safe here: the only action reads Dependabot metadata.
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: dependabot-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  arm:
+    name: Arm native auto-merge
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Hold majors and arm minor or patch updates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          UPDATED_DEPENDENCIES: ${{ steps.metadata.outputs.updated-dependencies-json }}
+        run: |
+          set -euo pipefail
+          say() { printf '%s\n' "$*"; }
+
+          # fetch-metadata's update-type is already the highest semver level in
+          # the pull request. Re-check every dependency so a group that contains
+          # any major update is still held if that roll-up ever changes.
+          major=$(jq -r \
+            '[.[] | select(.updateType == "version-update:semver-major")] | length' \
+            <<<"$UPDATED_DEPENDENCIES")
+
+          gh label create major-update -R "$REPO" \
+            --description "Dependabot major update; owner review required" \
+            --color B60205 --force >/dev/null
+
+          if [[ "$UPDATE_TYPE" == "version-update:semver-major" || "$major" -gt 0 ]]; then
+            gh api -X POST "repos/$REPO/issues/$PR/labels" \
+              -f labels[]=major-update >/dev/null
+            gh api -X DELETE "repos/$REPO/issues/$PR/labels/automerge" \
+              >/dev/null 2>&1 || true
+
+            marker="<!-- dependabot-major-hold -->"
+            existing=$(gh api --paginate --slurp \
+              "repos/$REPO/issues/$PR/comments" \
+              --jq 'add | map(select(.body | contains("<!-- dependabot-major-hold -->"))) | length')
+            if [[ "$existing" -eq 0 ]]; then
+              gh pr comment "$PR" -R "$REPO" --body "$marker
+          This is a major Dependabot update, so it is **not** auto-merged. It needs owner review. Minor and patch updates still merge automatically once every check passes."
+            fi
+            say "Major update held for owner review; auto-merge not armed."
+            exit 0
+          fi
+
+          gh api -X POST "repos/$REPO/issues/$PR/labels" \
+            -f labels[]=automerge >/dev/null
+          gh api -X DELETE "repos/$REPO/issues/$PR/labels/major-update" \
+            >/dev/null 2>&1 || true
+
+          gh pr merge "$PR" -R "$REPO" --auto --squash
+          say "Minor or patch update; native auto-merge armed."

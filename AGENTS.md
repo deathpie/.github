@@ -11,15 +11,22 @@ that applies to the account.
 - `standards/core.md`: the shared core standard. Byte-identical in five owner repositories.
 - `standards/owner.md`: the rules for this account on top of the core.
 - `scripts/core-drift.ts`: compares the five copies of `core.md`.
+- `scripts/agent-files.ts`: validates the skill files and their `.claude` symlinks.
+- `.github/workflows/checks.yml`: the required `check` job, which runs `just check`.
+- `.github/workflows/dependabot-automerge.yml`: arms native auto-merge for Dependabot minor and
+  patch updates and holds majors.
+- `docs/exceptions.md`: rules this repository cannot meet, with reasons and revisit dates.
 - `favicon.svg`: the T3 Code project icon.
 
 ## Commands
 
 - `just` lists the recipes.
 - `just fmt` formats the repository; `just fmt-check` reports files that need it.
-- `just check` is the gate: `fmt-check`.
+- `just lint` runs `actionlint` and `zizmor` over the workflows.
+- `just agent-files` checks `.agents/skills` against `.claude/skills`.
+- `just check` is the gate: `fmt-check`, `lint` and `agent-files`.
 - `just core-drift` compares `standards/core.md` with the other four owners. It needs `gh` logged
-  in as both `deathpie` and `simpsonm09`, so it runs locally only.
+  in as both `deathpie` and `simpsonm09`, so it runs locally only and is not a required check.
 
 ## Invariants
 

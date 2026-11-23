@@ -16,5 +16,14 @@ fmt:
 fmt-check:
     bun fmt --check
 
+# Lint the workflows: actionlint for syntax, zizmor for security.
+lint:
+    actionlint
+    zizmor .github/workflows
+
+# Check the agent skill files: frontmatter, recipes and the .claude symlinks.
+agent-files:
+    bun scripts/agent-files.ts
+
 # Everything a pull request in this repository must pass.
-check: fmt-check
+check: fmt-check lint agent-files
