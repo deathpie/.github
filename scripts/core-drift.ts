@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Compares standards/core.md across the five owner .github repositories.
+// Compares standards/core.md and hooks/core.yml across the five owner .github repositories.
 // Runs locally only: it needs gh logged in as both deathpie and simpsonm09,
 // because no single token can read every owner (homelab's .github is private).
 // gh runs from the temp directory so the per-owner gh wrapper picks the token
@@ -18,19 +18,23 @@ function run(cmd: string[]): string {
   return p.stdout.toString();
 }
 
-const local = sha(readFileSync("standards/core.md", "utf8"));
+const files = ["standards/core.md", "hooks/core.yml"];
 let drift = false;
-for (const owner of owners) {
-  let hash: string;
-  try {
-    const body = run(["gh", "api", "-H", "Accept: application/vnd.github.raw", `repos/${owner}/.github/contents/standards/core.md`]);
-    hash = sha(body);
-  } catch (error) {
-    hash = `unreadable (${(error as Error).message.split("\n")[0]})`;
+for (const file of files) {
+  const local = sha(readFileSync(file, "utf8"));
+  console.log(file);
+  for (const owner of owners) {
+    let hash: string;
+    try {
+      const body = run(["gh", "api", "-H", "Accept: application/vnd.github.raw", `repos/${owner}/.github/contents/${file}`]);
+      hash = sha(body);
+    } catch (error) {
+      hash = `unreadable (${(error as Error).message.split("\n")[0]})`;
+    }
+    const same = hash === local;
+    if (!same) drift = true;
+    console.log(`  ${same ? "ok   " : "DRIFT"} ${owner.padEnd(22)} ${hash}`);
   }
-  const same = hash === local;
-  if (!same) drift = true;
-  console.log(`${same ? "ok   " : "DRIFT"} ${owner.padEnd(22)} ${hash}`);
+  console.log(`  local                        ${local}`);
 }
-console.log(`local                        ${local}`);
 process.exit(drift ? 1 : 0);

@@ -1,0 +1,80 @@
+# hooks/core.yml — byte-identical in the five owner .github repositories.
+# Loaded by each repository's lefthook.yml through `remotes` at a pinned tag.
+# Dispatcher only: every job calls a `just` recipe from the contract in
+# standards/core.md C7.8. Repository jobs use their own names and never
+# redefine a job named here.
+min_version: 2.2.2
+assert_lefthook_installed: true
+glob_matcher: doublestar
+skip_lfs: true
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: core-fmt
+      glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json,jsonc,yml,yaml,md,toml,css,html}"
+      run: just fmt {staged_files}
+      stage_fixed: true
+      fail_text: "Formatting could not be applied; run `just fmt` and read the error."
+
+    - name: core-lint
+      glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts}"
+      run: just lint {staged_files}
+      fail_text: "Lint failed on staged files; fix the findings and stage again."
+
+    - name: core-secrets
+      run: just secrets-staged
+      fail_text: "A staged secret was found. Remove it; if it was ever pushed, rotate it."
+
+    - name: core-forbidden-files
+      run: just forbidden-files {staged_files}
+      fail_text: "A forbidden or oversized file is staged (env file, key, kubeconfig, >5 MB)."
+
+    - name: core-whitespace
+      run: git diff --cached --check
+      fail_text: "Staged whitespace errors or conflict markers; fix them and stage again."
+
+    - name: core-workflows
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: just workflows {staged_files}
+      fail_text: "actionlint or zizmor rejected a workflow."
+
+    - name: core-shell
+      glob: "**/*.{sh,bash}"
+      run: just shellcheck {staged_files}
+      fail_text: "shellcheck findings in staged shell scripts."
+
+    - name: core-agent-files
+      glob:
+        - "AGENTS.md"
+        - ".agents/**"
+        - ".claude/**"
+      run: just agent-files
+      fail_text: "Agent files are inconsistent (C8.3); run `just agent-files`."
+
+commit-msg:
+  jobs:
+    - name: core-conventional
+      run: just commit-msg {1}
+
+pre-push:
+  piped: true
+  jobs:
+    - name: core-policy
+      use_stdin: true
+      run: just hook-pre-push
+      fail_text: "Push refused. main changes only through a pull request (C2.1), or the pushed range failed the secret scan."
+
+    - name: core-fast-check
+      run: just pre-push-check
+      fail_text: "Fast pre-push checks failed; run `just check` for the full set."
+
+post-checkout:
+  jobs:
+    - name: core-deps-refresh
+      run: just deps-refresh
+
+post-merge:
+  jobs:
+    - name: core-deps-refresh
+      run: just deps-refresh
