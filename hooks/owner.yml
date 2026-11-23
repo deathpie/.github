@@ -1,0 +1,12 @@
+# hooks/owner.yml — deathpie owner hook jobs. Loaded with hooks/core.yml via remotes.
+# Every job calls a `just` recipe listed in standards/owner.md. Repository jobs
+# never reuse an `owner-*` name.
+pre-commit:
+  jobs:
+    - name: owner-privacy-identity
+      run: just privacy-identity
+      fail_text: "The author or committer email is not the owner's GitHub no-reply address."
+
+    - name: owner-privacy-staged
+      run: just privacy-staged
+      fail_text: "A staged blob contains private material. Remove it and stage again."

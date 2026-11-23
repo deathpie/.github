@@ -4,7 +4,8 @@ This file is byte-identical in every owner's `.github` repository:
 `deathpie/.github`, `simpsonm09/.github`, `sakuragaoka-homelab/.github`,
 `awepeeps/.github` and `simpsonm09-projects/.github`, at `standards/core.md`.
 Change it in one pull request per owner, with the same content, or not at all.
-`just core-drift` in any of those repositories compares the five copies.
+`just core-drift` in any of those repositories compares the five copies of
+this file and of `hooks/core.yml`.
 
 Each owner adds `standards/owner.md`. An owner standard may tighten any rule
 here. It may loosen only a rule marked **(profile)**, and it says how.
@@ -129,6 +130,43 @@ without a reason or a date is drift.
   standard toolchain behind the same recipe names.
 - C7.7 `.editorconfig` is present. `.gitattributes` contains
   `* text=auto eol=lf`.
+- C7.8 Git hooks run through Lefthook, pinned in `mise.toml` as
+  `"aqua:evilmartians/lefthook"`. Each owner's `.github` repository holds
+  `hooks/core.yml` (byte-identical across owners) and `hooks/owner.yml`
+  (owner jobs named `owner-*`), released as an annotated tag `hooks-v<N>`.
+  A repository's `lefthook.yml` loads both through `remotes` at that tag and
+  adds its own jobs under names that never start with `core-` or `owner-`.
+  `just hooks` removes a local `core.hooksPath` only when it equals
+  `.githooks`, refuses any other value or a global one, runs
+  `lefthook install`, and then asserts that `lefthook dump` contains the
+  `core-*` and `owner-*` jobs, because a failed remote fetch only warns.
+  `lefthook-local.yml` is git-ignored.
+- C7.9 CI has a `hooks` job: `lefthook install`, the same `lefthook dump`
+  assertion, then `lefthook validate` (which does not fetch remotes on its
+  own).
+- C7.10 The hook recipe contract. Every repository defines these recipes; a
+  recipe with nothing to do exits 0. Variadic recipes need
+  `set positional-arguments`.
+
+  | Recipe | Hook | Does |
+  | --- | --- | --- |
+  | `fmt *files` | pre-commit | formats the given files (all when none); fixes are re-staged |
+  | `lint *files` | pre-commit | lints the given files, check only |
+  | `secrets-staged` | pre-commit | `gitleaks git --staged --redact` |
+  | `forbidden-files *files` | pre-commit | rejects `.env*` except `*.example`, `*.pem`, `*.key`, `id_*`, kubeconfig, files over 5 MB |
+  | `workflows *files` | pre-commit | `actionlint` and `zizmor` |
+  | `shellcheck *files` | pre-commit | `shellcheck` |
+  | `agent-files` | pre-commit | C8.3 |
+  | `commit-msg file` | commit-msg | warns when the subject is not a Conventional Commit; never fails |
+  | `hook-pre-push` | pre-push | reads the pushed ref lines from stdin, refuses `refs/heads/main`, scans the exact pushed range with gitleaks plus the owner's scans |
+  | `pre-push-check` | pre-push | fast subset: type check and the tests the diff can reach |
+  | `deps-refresh` | post-checkout, post-merge | `bun install` when `bun.lock` changed, `mise install` when `mise.toml` changed |
+
+  Budgets: pre-commit under 3 seconds and pre-push under 30 seconds on a
+  typical change.
+- C7.11 Agents never skip hooks: no `LEFTHOOK=0`, no `--no-verify`, no
+  `lefthook-local.yml`. Hooks are advisory for humans; rulesets, the
+  direct-push guard and CI are the enforcement.
 
 ## C8. Agent instructions and skills
 

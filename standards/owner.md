@@ -49,9 +49,10 @@ request itself is the only gate and the missing check is a backlog row, not a qu
 
 The same three pieces in every repository:
 
-1. `.githooks/pre-push`, installed by `just hooks`. It refuses a push whose remote ref is `main`
-   and refuses a commit whose `git log --format=%G?` is not `G` (a good SSH signature). An
-   owner-approved recovery may set `ALLOW_MAIN_PUSH=1` for one push.
+1. `hooks/core.yml` and `hooks/owner.yml`, loaded through Lefthook and installed by `just hooks`.
+   The `core-policy` job refuses a push whose remote ref is `main` and refuses a commit whose
+   `git log --format=%G?` is not `G` (a good SSH signature). An owner-approved recovery may set
+   `ALLOW_MAIN_PUSH=1` for one push.
 2. `.github/workflows/guard-direct-push.yml`, the same design as
    `sakuragaoka-homelab/agent-tooling`: after a push to `main` it asks the API whether every new
    commit belongs to a merged pull request, opens or comments on one `direct-push` issue, and
@@ -92,9 +93,9 @@ C7.5 asks for `install`, `fmt`, `fmt-check`, `lint`, `typecheck`, `test`, `check
 `agent-files` in every repository. This repository has only what a docs-only tree can run:
 `default`, `fmt`, `fmt-check` and `check`, plus `core-drift`. The rest go into
 `docs/exceptions.md` as C7.5 exceptions, with the reason that there is nothing to install, lint,
-typecheck or test (backlog). In a repository with scripts, `hooks` installs `.githooks/pre-push`
-and `agent-files` fails when `.agents/skills` and `.claude/skills` disagree or a skill names a
-missing recipe.
+typecheck or test (backlog). In a repository with scripts, `hooks` runs `lefthook install` and
+asserts that `lefthook dump` contains the `core-*` and `owner-*` jobs, and `agent-files` fails
+when `.agents/skills` and `.claude/skills` disagree or a skill names a missing recipe.
 
 `just check` in `.github` runs `fmt-check`; `core-drift` needs `gh` logged in as two accounts, so
 it stays a local command and never a required check.
@@ -106,6 +107,26 @@ failure for long.
 CI median (C5.1): none of the six repositories has a workflow run, so there is no median to
 report. Each repository records its first median after 20 pull-request runs; until then the
 backlog row stays open rather than claiming a number.
+
+## Git hooks
+
+Hooks run through Lefthook, pinned in `mise.toml` as `"aqua:evilmartians/lefthook"` (C7.8). Each
+repository's `lefthook.yml` loads `hooks/core.yml` and `hooks/owner.yml` from this repository
+through `remotes` at the annotated tag `hooks-v2`, and adds its own jobs under names that never
+start with `core-` or `owner-`. Repositories migrate from the old `.githooks` launchers to Lefthook
+per core C7.8.
+
+This owner's `hooks/owner.yml` jobs run before every commit:
+
+| Job                      | Recipe                  | Behaviour                                                                                                                                                  |
+| ------------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `owner-privacy-identity` | `just privacy-identity` | Fails unless the effective author and committer email, including environment overrides, is the GitHub no-reply address.                                    |
+| `owner-privacy-staged`   | `just privacy-staged`   | Fails when a staged blob contains an IP address, an email other than the no-reply address, a hostname from the local denylist, a serial number or a token. |
+
+`just hooks` removes a local `core.hooksPath` only when it equals `.githooks`, refuses any other
+value or a global one, runs `lefthook install`, and then asserts that `lefthook dump` contains the
+`core-*` and `owner-*` jobs, because a failed remote fetch only warns. `lefthook-local.yml` is
+git-ignored, and agents never skip hooks: no `LEFTHOOK=0`, no `--no-verify` (C7.11).
 
 ## Owner rules
 
@@ -168,7 +189,7 @@ listed: every repository has `runs.total_count: 0`.
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `.github`              | C1.5 wiki and Projects on. C2.1 no ruleset. C2.3 settings still allow merge and rebase. C2.6 `delete_branch_on_merge=false` and a stale `chore/t3-project-icon` branch. C1.6 no MIT `LICENSE`. C2.2 and C5.1 no `check` workflow, so no required status check. C7.5 `install`, `lint`, `typecheck`, `test`, `hooks` and `agent-files` have nothing to run.                                                                                                                                                                                                                  | Owner applies the `main` ruleset and turns the merge settings to squash-only with branch deletion. Add an MIT `LICENSE`, a `checks.yml` running `just check`, and exception rows for the recipes that do not apply to a docs-only repository. Delete the stale branch.                                                                                       |
 | `deathpie`             | C1.2 no description. C1.5 wiki and Projects on. C2.1 no ruleset. C2.6 stale `chore/t3-project-icon`. C1.6 no license. C7.5 and C7.7 no `justfile`, `mise.toml`, `.editorconfig` or `.gitattributes`. C8.1 no `AGENTS.md`. C2.2 no required check.                                                                                                                                                                                                                                                                                                                           | One pull request with the description, the ruleset and the same cheap skeleton as `.github`. Record C1.6 as an exception while the repository is a two-file profile README.                                                                                                                                                                                  |
-| `deathpie-discord`     | C2.1 no hook, guard or automerge workflow. C3.2 no `dependabot.yml`. C1.5 Projects on. C2.5 `save/opentofu-pilot-handoff` and three merged `chore/*` branches remain. C7.5 and C7.7 no `justfile`, `mise.toml`, `.editorconfig` or `.gitattributes`.                                                                                                                                                                                                                                                                                                                        | Add `.githooks/pre-push`, the two workflows, `dependabot.yml` for `github-actions`, the toolchain skeleton and `AGENTS.md` updates for the new recipes. Delete the `save/` and merged branches after confirming the handoff document exists. No CI: data-only.                                                                                               |
+| `deathpie-discord`     | C2.1 no hook, guard or automerge workflow. C3.2 no `dependabot.yml`. C1.5 Projects on. C2.5 `save/opentofu-pilot-handoff` and three merged `chore/*` branches remain. C7.5 and C7.7 no `justfile`, `mise.toml`, `.editorconfig` or `.gitattributes`.                                                                                                                                                                                                                                                                                                                        | Add `lefthook.yml` loading the `hooks-v2` remotes, the two workflows, `dependabot.yml` for `github-actions`, the toolchain skeleton and `AGENTS.md` updates for the new recipes. Delete the `save/` and merged branches after confirming the handoff document exists. No CI: data-only.                                                                      |
 | `nsfw-model-testing`   | C2.1 no hook, guard or automerge workflow. C3.2 no `dependabot.yml`. C5.1 no required check in a repository that ships a script. C8.1 no `AGENTS.md`. C7.5 and C7.7 no `justfile`, `mise.toml`, `.editorconfig` or `.gitattributes`. C1.5 Projects on. C2.5 stale `save/research-notes-prereinstall-20261029` branch.                                                                                                                                                                                                                                                       | Same protection and dependency files, plus `justfile` with `check` (`fmt-check`, `actionlint`, `zizmor`, PSScriptAnalyzer) and a `checks.yml`; `AGENTS.md` covering the model tree and the adult-content constraints. Delete the `save/` branch after the notes land in `docs/`.                                                                             |
 | `sd-card-tools`        | C2.1 no hook, guard or automerge workflow. C3.2 no `dependabot.yml`. C5.1 no required check. C8.1 no `AGENTS.md`, and the destructive-script rule has nowhere to live. Owner rule 5: `format-photos.sh` plans and asks for `FORMAT`, but `--yes` bypasses the word and there is no dry-run default. C7.7 no `.editorconfig` or `.gitattributes`. C1.5 Projects on.                                                                                                                                                                                                          | Add protection, dependency and toolchain files with `check` = `fmt-check` plus `shellcheck`. Make `--dry-run` the default when `--yes` is absent, keep `FORMAT` as the interactive word, and state both in a new `AGENTS.md` with the `targets.conf` privacy rule.                                                                                           |
 | `wow-forever-settings` | C2.1 no hook, guard or automerge workflow. C3.2 no `dependabot.yml`. C5.1 no required check. C8.1 no `AGENTS.md`; the constraints live in README prose. C7.4 four Python helpers (`export_portable_settings.py`, `make_snapshot_linux.py`, `restore_snapshot_linux.py`, `compare_savedvariables.py`). Owner rule 5: restore and apply need a dry-run default and a confirmation word; `restore_snapshot_linux.py` has `--dry-run` only as an option. C7.7 `.gitattributes` has byte rules but no `* text=auto eol=lf`. C2.5 `docs/research-keyboard-party-invites` remains. | Add protection, dependency and toolchain files; `check` = `fmt-check`, `actionlint`, `zizmor`, `py_compile` until the migration. Port the helpers to Bun TypeScript one at a time, recording an exception for any that cannot move. Add the global `text=auto` line above the `/WTF/**` byte rules, and `AGENTS.md` with the dry-run and confirmation rules. |
