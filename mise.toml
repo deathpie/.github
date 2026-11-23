@@ -4,3 +4,6 @@
 [tools]
 just = "1.59.0"
 bun = "1.4.5"
+actionlint = "1.7.12"
+shellcheck = "0.11.0"
+zizmor = "1.30.1"
