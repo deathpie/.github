@@ -108,6 +108,9 @@ CI median (C5.1): none of the six repositories has a workflow run, so there is n
 report. Each repository records its first median after 20 pull-request runs; until then the
 backlog row stays open rather than claiming a number.
 
+`just fleet-audit` re-derives this conformance list read-only, and `just fleet-audit --timing`
+adds the C5.1 median; `scripts/fleet-audit.ts` is the shared copy of the tool.
+
 ## Git hooks
 
 Hooks run through Lefthook, pinned in `mise.toml` as `"aqua:evilmartians/lefthook"` (C7.8). Each

@@ -5,3 +5,4 @@
 standards/core.md
 hooks/core.yml
 scripts/core-drift.ts
+scripts/fleet-audit.ts

@@ -45,3 +45,11 @@ that applies to the account.
   request.
 - Change GitHub settings, repository visibility or access from a workflow, script or agent run.
 - Commit credentials, tokens, personal identifiers or local machine state.
+
+## Auditing
+
+`just fleet-audit` checks every `deathpie` repository against `standards/core.md` and
+`standards/owner.md` and exits 1 on a gap. `just fleet-audit --timing` adds the C5.1 median pull
+request CI wall time; `--owner <owner>` narrows the scope and `--json` prints machine output.
+A gap recorded in a repository's `docs/exceptions.md` is reported as excepted, not a failure.
+The audit is read-only, needs `gh` logged in as both accounts, and runs locally rather than in CI.
