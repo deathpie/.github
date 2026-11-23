@@ -4,9 +4,9 @@
 pre-commit:
   jobs:
     - name: owner-privacy-identity
-      run: just privacy-identity
+      run: mise exec -- just privacy-identity
       fail_text: "The author or committer email is not the owner's GitHub no-reply address."
 
     - name: owner-privacy-staged
-      run: just privacy-staged
+      run: mise exec -- just privacy-staged
       fail_text: "A staged blob contains private material. Remove it and stage again."

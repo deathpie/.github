@@ -164,6 +164,10 @@ without a reason or a date is drift.
 
   Budgets: pre-commit under 3 seconds and pre-push under 30 seconds on a
   typical change.
+
+  Every hook job, core and owner, runs as `mise exec -- just <recipe>` so the
+  repository's pinned tools are on PATH without shell activation. `mise` itself
+  must be on PATH on every machine that commits.
 - C7.11 Agents never skip hooks: no `LEFTHOOK=0`, no `--no-verify`, no
   `lefthook-local.yml`. Hooks are advisory for humans; rulesets, the
   direct-push guard and CI are the enforcement.
