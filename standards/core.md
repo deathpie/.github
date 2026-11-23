@@ -88,10 +88,16 @@ without a reason or a date is drift.
 - C5.3 The full test suite runs on every push to `main` and weekly, so diff
   selection never hides a failure for long.
 - C5.4 Slow, non-diff work does not block a pull request: CodeQL,
-  full-history secret scans, cross-OS matrices and scheduled audits run on
-  `main`, on a schedule, or as non-required checks.
+  full-history secret scans and scheduled audits run on `main`, on a
+  schedule, or as non-required checks.
 - C5.5 A repository that cannot meet C5.1 records an exception with the
   measured median and what dominates it.
+- C5.6 Linux only. Every machine the owners develop on is Linux, so every
+  job runs on `ubuntu-*` runners and nothing is built, tested or supported
+  for Windows or macOS. Code that must run on a Windows target machine
+  (for example `parents-windows-pc`) is linted and parsed on Linux, never on
+  a Windows runner. A fork keeps upstream's Windows or macOS code, but its
+  own CI runs on Linux only.
 
 ## C6. Security
 
@@ -123,8 +129,8 @@ without a reason or a date is drift.
   `package.json` has no `lint` script (`bun lint` would run it instead).
 - C7.4 Repository scripts are TypeScript run by Bun. Shell is allowed only as
   a thin launcher (hooks, one-line wrappers). PowerShell only for code that
-  runs on Windows targets. Python only where TypeScript cannot do the job,
-  recorded as an exception.
+  runs on a Windows target machine (C5.6). Python only where TypeScript
+  cannot do the job, recorded as an exception.
 - C7.5 Every repository has the recipes `install`, `fmt`, `fmt-check`,
   `lint`, `typecheck` (when there is TypeScript), `test`, `check` (everything
   CI requires, in parallel where possible), `hooks` (installs the git hooks)
@@ -188,8 +194,8 @@ without a reason or a date is drift.
   relative symlink `.claude/skills/<name>` → `../../.agents/skills/<name>`.
   `just agent-files` fails when the two sets differ, a link is broken, or a
   skill names a recipe that does not exist.
-- C8.4 Windows clones need `core.symlinks=true` (Developer Mode on). A
-  checkout where links became text files fails `just agent-files`.
+- C8.4 A checkout where the links became text files (for example a clone
+  made with `core.symlinks=false`) fails `just agent-files`.
 
 ## C9. Lifecycle
 
