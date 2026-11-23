@@ -25,6 +25,10 @@ without a reason or a date is drift.
 - C1.5 Issues are on. Wiki, Projects and Discussions are off unless used. **(profile)**
 - C1.6 Public code written by the owner is MIT licensed. Private repositories
   carry no license. Forks keep the upstream license.
+- C1.7 Every local clone of a fork runs `gh repo set-default <owner>/<fork>`
+  once, so `gh` never falls back to the upstream repository. Agents always
+  pass `-R <owner>/<repo>` (and `--base` for forks) to `gh pr`, and never open,
+  comment on, or close anything in an upstream repository.
 
 ## C2. Branches, pull requests and merging
 
