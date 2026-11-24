@@ -97,7 +97,23 @@ without a reason or a date is drift.
   for Windows or macOS. Code that must run on a Windows target machine
   (for example `parents-windows-pc`) is linted and parsed on Linux, never on
   a Windows runner. A fork keeps upstream's Windows or macOS code, but its
-  own CI runs on Linux only.
+  own CI runs on Linux only. "Linux runner" means a GitHub-hosted `ubuntu-*`
+  runner or a self-hosted Linux runner (C5.8).
+- C5.7 Hooks first, CI confirms. The required pull-request checks are the
+  same `just` recipes the Lefthook hooks run (format, lint, type check, the
+  fast tests the diff can reach, secrets, hooks validation), so CI confirms
+  what the hooks already caught instead of running a second, slower suite.
+  An owner may add required checks that the hooks cannot run within their
+  budgets only with an owner-standard rule that names them; everything else
+  slow belongs to C5.3/C5.4.
+- C5.8 Where CI runs. Public repositories use GitHub-hosted runners (free
+  and unlimited, and their rulesets need real check results). Private
+  repositories in an organization run on that organization's self-hosted
+  Linux runners (`runs-on: [self-hosted, linux, <label>]`), registered
+  only for private repositories: public repositories never run on
+  self-hosted runners. A personal account cannot have account-wide runners,
+  so its private repositories use GitHub-hosted runners within the free
+  allowance and move to a repository runner only if they exhaust it.
 
 ## C6. Security
 

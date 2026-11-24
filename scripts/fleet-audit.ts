@@ -3,15 +3,20 @@
 //
 // Checks every repository of the five owners: settings, rulesets, security,
 // required files, the hooks tag, Linux-only runners, PowerShell/Python
-// leftovers and, with --timing, the C5.1 median pull request CI wall time.
+// leftovers, the C5.7 required-check policy, the C5.8 runner placement and,
+// with --timing, the C5.1 median pull request CI wall time.
 // Every gap names the rule it violates. A gap recorded in the repository's
 // docs/exceptions.md is reported as excepted and does not fail the run.
 // --timing also reports a C5.1 gap when the median is 60 s or more; a
 // repository with no pull request runs has no measured median and no gap.
+// C5.7 compares a required check against the hook recipe names, so the check
+// has to carry the recipe's name; the owner standard's `## CI-only required
+// checks` section names the ones that are allowed to differ.
 //
 // gh runs from the temp directory so the per-owner gh wrapper picks the token
 // from the target owner instead of refusing a cross-account call. This script
 // only issues GET requests and never prints a token or a secret value.
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 // Keep this list, and its order, identical to `owners` in scripts/core-drift.ts.
@@ -21,7 +26,7 @@ const owners = ["deathpie", "awepeeps", "sakuragaoka-homelab", "simpsonm09", "si
 type Owner = (typeof owners)[number];
 
 type GhResult = { ok: boolean; json: any };
-type Gap = { rules: string[]; message: string };
+type Gap = { rules: string[]; message: string; neverExcepted?: boolean };
 type Report = {
   repo: string;
   owner: Owner;
@@ -100,6 +105,170 @@ function medianSeconds(repo: string): number | null {
   if (!recent.length) return null;
   const walls = recent.map((run) => Math.round((run.end - run.start) / 1000)).sort((a, b) => a - b);
   return walls[Math.floor(walls.length / 2)];
+}
+
+const unquote = (value: string): string => value.trim().replace(/^["']|["']$/g, "");
+
+// C5.8: every `runs-on:` value in a workflow, inline (`runs-on: ubuntu-latest`)
+// or as a block list (`runs-on:` then `- self-hosted`). A matrix expression is
+// not a label, so it counts as neither kind.
+function runnersIn(body: string): string[] {
+  const values: string[] = [];
+  const lines = body.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = /^\s*runs-on:\s*(.*)$/.exec(lines[i]);
+    if (!match) continue;
+    const inline = match[1].replace(/#.*$/, "").trim();
+    if (inline) {
+      values.push(inline);
+      continue;
+    }
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const item = /^\s*-\s*(.+)$/.exec(lines[j]);
+      if (!item) break;
+      values.push(item[1].replace(/#.*$/, "").trim());
+    }
+  }
+  return values;
+}
+
+// C5.7: a required context is `workflow / job` or just the job name. The job
+// part is what has to be a hook recipe.
+function jobPart(context: string): string {
+  const name = context.trim();
+  return name.includes(" / ") ? name.slice(name.lastIndexOf(" / ") + 3) : name;
+}
+
+const hookRecipes = ["fmt", "fmt-check", "lint", "typecheck", "test", "secrets", "privacy", "hooks"];
+
+function isHookRecipe(context: string): boolean {
+  const name = jobPart(context).toLowerCase();
+  if (hookRecipes.includes(name)) return true;
+  // A matrix or shard suffix keeps the recipe: `test (unit)`, `fmt fast`.
+  return /^(fmt|fmt-check|lint|typecheck|test|secrets|privacy|hooks)[\s(]/.test(name);
+}
+
+// The owner standard's `## CI-only required checks` section names the required
+// contexts the hook recipes cannot run. Names are backticked, one per item,
+// with or without a `workflow / ` prefix.
+function ciOnlyChecks(ownerStandard: string | null): Set<string> {
+  const names = new Set<string>();
+  if (ownerStandard === null) return names;
+  const add = (value: string) => {
+    const name = value.trim().toLowerCase();
+    if (!name) return;
+    names.add(name);
+    names.add(jobPart(name).toLowerCase());
+  };
+  let inside = false;
+  for (const line of ownerStandard.split("\n")) {
+    if (/^##\s/.test(line)) {
+      inside = /^##\s+CI-only required checks\s*$/i.test(line);
+      continue;
+    }
+    if (!inside) continue;
+    for (const match of line.matchAll(/`([^`]+)`/g)) add(match[1]);
+    if (!line.includes("`")) {
+      const bullet = /^\s*[-*]\s+([^\s—–:]+)/.exec(line);
+      if (bullet) add(bullet[1]);
+    }
+  }
+  return names;
+}
+
+// The owner standard is this repository's `standards/owner.md`: the audit runs
+// from one owner's `.github` repository, so the file beside the script is the
+// policy for every repository it audits.
+function ownerStandard(): string | null {
+  try {
+    return readFileSync(new URL("../standards/owner.md", import.meta.url), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+// A workflow triggers on pull requests when its `on:` block names
+// `pull_request` (not `pull_request_target`, whose underscore is not a word
+// boundary).
+function onPullRequest(body: string): boolean {
+  const lines = body.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = /^on:\s*(.*)$/.exec(lines[i]);
+    if (!match) continue;
+    const inline = match[1].replace(/#.*$/, "").trim();
+    if (inline) return /\bpull_request\b/.test(inline);
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (/^\S/.test(lines[j])) break;
+      if (/^\s+pull_request\b/.test(lines[j])) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+// The check contexts a workflow reports: each job's `name:` when it has one,
+// otherwise the job id. Job ids sit at two spaces under `jobs:`. A job whose
+// `if:` skips pull requests is not a pull-request check.
+function jobNames(body: string): string[] {
+  const jobs: { name: string; skipsPullRequests: boolean }[] = [];
+  let inJobs = false;
+  for (const line of body.split("\n")) {
+    if (/^jobs:\s*$/.test(line)) {
+      inJobs = true;
+      continue;
+    }
+    if (!inJobs) continue;
+    if (/^\S/.test(line)) {
+      inJobs = false;
+      continue;
+    }
+    const id = /^  ([A-Za-z0-9_-]+):\s*$/.exec(line);
+    if (id) {
+      jobs.push({ name: id[1], skipsPullRequests: false });
+      continue;
+    }
+    if (jobs.length === 0) continue;
+    const display = /^    name:\s*(.+)$/.exec(line);
+    if (display) jobs[jobs.length - 1].name = unquote(display[1].replace(/#.*$/, "").trim());
+    const condition = /^    if:\s*(.+)$/.exec(line);
+    if (condition && /pull_request/.test(condition[1]) && /!=|!\s*contains/.test(condition[1])) {
+      jobs[jobs.length - 1].skipsPullRequests = true;
+    }
+  }
+  return jobs.filter((job) => !job.skipsPullRequests).map((job) => job.name);
+}
+
+// C5.7: the required pull-request contexts. A public repository takes them
+// from every ruleset's `required_status_checks` rule. A private repository on
+// Free has no rulesets, so its contexts are the jobs of the pull-request checks
+// workflow, the one that runs `just check`.
+function requiredContexts(
+  full: string,
+  pub: boolean,
+  workflows: string[],
+  read: (path: string) => string | null,
+): string[] {
+  if (pub) {
+    const contexts: string[] = [];
+    for (const ruleset of api(`repos/${full}/rulesets`) ?? []) {
+      if (ruleset.target && ruleset.target !== "branch") continue;
+      const detail = api(`repos/${full}/rulesets/${ruleset.id}`);
+      for (const rule of detail?.rules ?? []) {
+        if (rule.type !== "required_status_checks") continue;
+        for (const check of rule.parameters?.required_status_checks ?? []) {
+          if (typeof check.context === "string") contexts.push(check.context);
+        }
+      }
+    }
+    return contexts;
+  }
+  const pullRequests = workflows.filter((workflow) => onPullRequest(read(workflow) ?? ""));
+  if (pullRequests.length === 0) return [];
+  const checks =
+    pullRequests.find((workflow) => /\bjust\s+check\b/.test(read(workflow) ?? "")) ??
+    pullRequests.find((workflow) => /\/checks?\.ya?ml$/.test(workflow)) ??
+    (pullRequests.length === 1 ? pullRequests[0] : null);
+  return checks === null ? [] : jobNames(read(checks) ?? "");
 }
 
 function audit(owner: Owner, listed: any, timing: boolean): Report {
@@ -235,12 +404,12 @@ function audit(owner: Owner, listed: any, timing: boolean): Report {
   const ownFile = (path: string) => !upstream || upstream.get(path) !== shas.get(path);
 
   const workflows = [...paths].filter((path) => /^\.github\/workflows\/.*\.ya?ml$/.test(path));
+  const ownWorkflows = !fork || upstream !== null ? workflows.filter(ownFile) : null;
   if (workflows.length > 0) {
     if (!has(".github/dependabot.yml")) gaps.push({ rules: ["C3.2"], message: "no dependabot.yml" });
     // Without the upstream tree there is no way to tell an inherited workflow
     // from the fork's own, so only audit runners when the tree is readable.
-    if (!fork || upstream !== null) {
-      const ownWorkflows = workflows.filter(ownFile);
+    if (ownWorkflows !== null) {
       let nonLinux = 0;
       for (const workflow of ownWorkflows) {
         if (/(windows|macos)-(latest|\d)/.test(read(workflow) ?? "")) nonLinux += 1;
@@ -248,7 +417,39 @@ function audit(owner: Owner, listed: any, timing: boolean): Report {
       if (nonLinux > 0) {
         gaps.push({ rules: ["C5.6"], message: `${nonLinux} workflow(s) on non-Linux runners` });
       }
+
+      // C5.8: where CI runs. A public repository never runs on self-hosted
+      // runners, and no exception can allow it. An organization's private
+      // repositories run on its self-hosted Linux runners; a personal account
+      // cannot register account-wide runners, so its private repositories use
+      // GitHub-hosted runners and are not flagged for them.
+      const runners = ownWorkflows.flatMap((workflow) => runnersIn(read(workflow) ?? "")).map(unquote);
+      const selfHosted = runners.some((runner) => /\bself-hosted\b/.test(runner));
+      const githubHosted = runners.some((runner) => /^(ubuntu|windows|macos)-/.test(runner));
+      if (pub && selfHosted) {
+        gaps.push({
+          rules: ["C5.8"],
+          message: "public repository on a self-hosted runner",
+          neverExcepted: true,
+        });
+      }
+      const organization = String(repo.owner?.type ?? "").toLowerCase() === "organization";
+      if (!pub && organization && githubHosted) {
+        gaps.push({
+          rules: ["C5.8"],
+          message: "private organization repository on GitHub-hosted runners",
+        });
+      }
     }
+  }
+
+  // C5.7: the required pull-request checks are the hook recipes, unless the
+  // owner standard names them under `## CI-only required checks`.
+  const ciOnly = ciOnlyChecks(ownerStandard());
+  for (const context of requiredContexts(full, pub, workflows, read)) {
+    const name = context.trim().toLowerCase();
+    if (isHookRecipe(context) || ciOnly.has(name) || ciOnly.has(jobPart(name))) continue;
+    gaps.push({ rules: ["C5.7"], message: `required check ${context} is not a hook recipe` });
   }
 
   // C7.4 is the core language rule; the homelab standard restates it as H6 and
@@ -274,7 +475,10 @@ function audit(owner: Owner, listed: any, timing: boolean): Report {
   }
 
   const excepted = gaps.length > 0 ? exceptionsFor(full, def) : new Set<string>();
-  report.gaps = gaps.map((gap) => ({ ...gap, excepted: gap.rules.some((rule) => excepted.has(rule)) }));
+  report.gaps = gaps.map(({ neverExcepted, ...gap }) => ({
+    ...gap,
+    excepted: neverExcepted !== true && gap.rules.some((rule) => excepted.has(rule)),
+  }));
   return report;
 }
 
