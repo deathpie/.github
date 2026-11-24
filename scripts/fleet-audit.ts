@@ -16,7 +16,6 @@
 // gh runs from the temp directory so the per-owner gh wrapper picks the token
 // from the target owner instead of refusing a cross-account call. This script
 // only issues GET requests and never prints a token or a secret value.
-import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 // Keep this list, and its order, identical to `owners` in scripts/core-drift.ts.
@@ -176,15 +175,17 @@ function ciOnlyChecks(ownerStandard: string | null): Set<string> {
   return names;
 }
 
-// The owner standard is this repository's `standards/owner.md`: the audit runs
-// from one owner's `.github` repository, so the file beside the script is the
-// policy for every repository it audits.
-function ownerStandard(): string | null {
-  try {
-    return readFileSync(new URL("../standards/owner.md", import.meta.url), "utf8");
-  } catch {
-    return null;
+// The owner standard is that owner's `.github` repository's
+// `standards/owner.md`, fetched once per owner: a full-fleet run from one clone
+// applies each owner's own policy, not the local one.
+const ownerStandards = new Map<Owner, string | null>();
+
+function ownerStandard(owner: Owner): string | null {
+  if (!ownerStandards.has(owner)) {
+    const branch = api(`repos/${owner}/.github`)?.default_branch ?? "main";
+    ownerStandards.set(owner, raw(`${owner}/.github`, "standards/owner.md", branch));
   }
+  return ownerStandards.get(owner) ?? null;
 }
 
 // A workflow triggers on pull requests when its `on:` block names
@@ -445,7 +446,7 @@ function audit(owner: Owner, listed: any, timing: boolean): Report {
 
   // C5.7: the required pull-request checks are the hook recipes, unless the
   // owner standard names them under `## CI-only required checks`.
-  const ciOnly = ciOnlyChecks(ownerStandard());
+  const ciOnly = ciOnlyChecks(ownerStandard(owner));
   for (const context of requiredContexts(full, pub, workflows, read)) {
     const name = context.trim().toLowerCase();
     if (isHookRecipe(context) || ciOnly.has(name) || ciOnly.has(jobPart(name))) continue;
