@@ -146,11 +146,17 @@ const hookRecipes = [
 ];
 const hookRecipePattern = new RegExp(`^(${hookRecipes.join("|")})[\\s(]`);
 
-function isHookRecipe(context: string): boolean {
-  const name = jobPart(context).toLowerCase();
-  if (hookRecipes.includes(name)) return true;
+function isRecipeName(name: string): boolean {
   // A matrix or shard suffix keeps the recipe: `test (unit)`, `fmt fast`.
-  return hookRecipePattern.test(name);
+  return hookRecipes.includes(name) || hookRecipePattern.test(name);
+}
+
+// A `workflow / job` context counts when either half names a hook recipe:
+// `lint / flint` is the `lint` reusable workflow's job.
+function isHookRecipe(context: string): boolean {
+  const name = context.trim().toLowerCase();
+  if (isRecipeName(jobPart(name))) return true;
+  return name.includes(" / ") && isRecipeName(name.slice(0, name.indexOf(" / ")));
 }
 
 // The owner standard's `## CI-only required checks` section names the required
