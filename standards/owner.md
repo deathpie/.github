@@ -113,7 +113,13 @@ adds the C5.1 median; `scripts/fleet-audit.ts` is the shared copy of the tool.
 
 ## CI-only required checks
 
-None.
+None: the private repositories have no ruleset on the Free plan, so nothing is a required check.
+Their `check` job still runs `just check` and the four hook-only recipes (`agent-files`,
+`forbidden-files`, `workflows`, `shellcheck`), so CI confirms what the hooks catch.
+`deathpie-discord` has no check workflow; its hook still runs `fmt-check` and `lint`.
+
+The private repositories stay on GitHub-hosted runners under C5.8, which allows that for a
+personal account; no exception is needed.
 
 ## Git hooks
 
