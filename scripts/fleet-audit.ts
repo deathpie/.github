@@ -138,13 +138,19 @@ function jobPart(context: string): string {
   return name.includes(" / ") ? name.slice(name.lastIndexOf(" / ") + 3) : name;
 }
 
-const hookRecipes = ["fmt", "fmt-check", "lint", "typecheck", "test", "secrets", "privacy", "hooks"];
+// Hook recipes from C7.5 and C7.10, plus `check` (C7.5: the aggregate of the
+// recipes CI requires) and common display aliases (`Format`, `Types`).
+const hookRecipes = [
+  "fmt", "fmt-check", "format", "lint", "typecheck", "types", "test", "secrets", "privacy", "hooks",
+  "check", "workflows", "shellcheck", "agent-files", "forbidden-files",
+];
+const hookRecipePattern = new RegExp(`^(${hookRecipes.join("|")})[\\s(]`);
 
 function isHookRecipe(context: string): boolean {
   const name = jobPart(context).toLowerCase();
   if (hookRecipes.includes(name)) return true;
   // A matrix or shard suffix keeps the recipe: `test (unit)`, `fmt fast`.
-  return /^(fmt|fmt-check|lint|typecheck|test|secrets|privacy|hooks)[\s(]/.test(name);
+  return hookRecipePattern.test(name);
 }
 
 // The owner standard's `## CI-only required checks` section names the required
